@@ -53,7 +53,6 @@ Reset:
 	stz   $15
 
 	//; at this point X = FF
-	
 	//; $210d: set mode 7 bg position
 	stz   $0d
 	stz   $0d
@@ -81,11 +80,13 @@ Reset:
 	
 	//; $212c: enable bg 1
 	inc   $2c
-	//; $2130: disable color math but enable direct color
-	inc   $30
-	stz   $31
 
+	//; start using 16-bit writes from A now
 	rep   #$20
+	
+	//; $2130-31: disable color math but enable direct color
+	inc   $30
+	
 	//; $2105: enable mode 7
 	//; $2106: 2x2 mosaic
 	lda.w #$1107
@@ -95,25 +96,21 @@ Reset:
 	stz   $2e
 	
 	//; clear tilemap
-//	inx //; x was 00FF here, increment to 0000
-//	txa
 	tya //; we never use Y so it's always zero from power on 
 	//; - assume it's not nonzero when booting from a flash cart either
-
 -
 	sta   $16
-//	stx   $18 //; see above
 	sty   $18
 	inc
 	bpl   -
 
-	//; enable screen
-	ldx   #$0f
-	stx   $00
+	lda.w #$003f
+	//; $2100: enable screen
+	//; (same value is used to init {part} below)
+	sta   $00
 
 	pld
 	//; init variables
-	lda.w #$003f
 	sta.b {part}
 	lda.w #$7ec8
 	sta.b {crc_seed}+2
