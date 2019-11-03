@@ -4,7 +4,7 @@
 arch snes.cpu
 lorom
 
-org $808000
+org $00fe00
 
 define part      $0000 // 2 bytes
 define direction $0002 // 2 bytes
@@ -29,8 +29,7 @@ Reset:
 	pld
 
 	//; $2100: disable the display so we can start setting up VRAM
-	//; (C will already be set from previous XCE, so we can do it in 2 bytes like this)
-	ror   $00
+	dec   $00
 	
 	//; $2133: disable hires, interlace, etc
 	stz   $33
@@ -44,7 +43,7 @@ Reset:
 	stz   $17
 	ldx   #$03
 -
-	lda   colors,x
+	lda.w colors,x
 	sta   $19
 	stz   $19
 	dex
@@ -144,7 +143,7 @@ next_pixel:
 +
 	sep   #$20
 	//; update direction
-	ldx.b #$00
+	tyx
 	lda.b {direction}
 	asl
 	and.b #$04
