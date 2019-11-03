@@ -17,7 +17,7 @@ word_seeds:
 incbin "DATA.BIN"
 
 colors:
-db $bf, $67, $15, $00
+db $bf, $67, $15, $01
 
 Reset:
 	clc
@@ -37,10 +37,11 @@ Reset:
 	stz   $33
 	
 	//; $210d: set mode 7 bg position
+	lda   #$ff
 	stz   $0d
 	stz   $0d
-	stz   $0e
-	stz   $0e
+	sta   $0e
+	sta   $0e
 	
 	//; $211f-20: center mode 7 bg at (0,0)
 	stz   $1f
@@ -49,6 +50,7 @@ Reset:
 	stz   $20
 
 	//; init mode 7 screen buffer here before re-enabling screen
+	
 	lda   #$81
 	sta   $15
 	//; test palette setup
@@ -61,7 +63,7 @@ Reset:
 	stz   $19
 	dex
 	bpl   -
-	
+
 	//; clear tilemap
 	stz   $15
 -
@@ -89,21 +91,20 @@ Reset:
 	stz   $1c
 	stz   $1d
 	stz   $1d
-//	asl
 	stz   $1e
 	sta   $1e
 	
 	//; $212c: enable bg 1
 	inc   $2c
-
-	//; $212e: disable window clipping of main screen
-	stz   $2e
 	//; $2130: disable color math but enable direct color
 	inc   $30
 	stz   $31
 
-	pld
 	rep   #$20
+	//; $212e-2f: disable window clipping
+	stz   $2e
+	
+	pld
 	//; init variables
 	lda.w #$003f
 	sta.b {part}
@@ -142,14 +143,13 @@ next_pixel:
 	sep   #$20
 	//; update direction
 	lda.b {direction}
-	php
-	and.b #$02
+	asl
+	and.b #$04
 	bne   +
 	inx
 +
 	lda.b #$ff
-	plp
-	bmi   +
+	bcs   +
 	lda.b #$01
 +
 	clc
@@ -162,9 +162,16 @@ next_pixel:
 	bit   $4212
 	bpl   -
 	
-	//; plot pixel	
-	ldx.b {cursor}
-	stx   $2116
+	//; plot pixel
+	//; need to translate 8.8 coords into 7.7 here, which sucks, but oh well
+	lda.b {cursor}+1
+	lsr
+	sta   $2117
+	lda.b {cursor}
+	bcc   +
+	ora   #$80
++
+	sta   $2116
 	lda.b {part}
 	and.b #$03
 	sta   $2118
