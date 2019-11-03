@@ -22,7 +22,6 @@ db $bf, $67, $15, $01
 Reset:
 	clc
 	xce
-	rep   #$10
 
 	//; use DP as a pointer to B bus
 	phd
@@ -35,19 +34,6 @@ Reset:
 	
 	//; $2133: disable hires, interlace, etc
 	stz   $33
-	
-	//; $210d: set mode 7 bg position
-	lda   #$ff
-	stz   $0d
-	stz   $0d
-	sta   $0e
-	sta   $0e
-	
-	//; $211f-20: center mode 7 bg at (0,0)
-	stz   $1f
-	stz   $1f
-	stz   $20
-	stz   $20
 
 	//; init mode 7 screen buffer here before re-enabling screen
 	
@@ -56,30 +42,29 @@ Reset:
 	//; test palette setup
 	stz   $16
 	stz   $17
-	ldx   #$0003
+	ldx   #$03
 -
 	lda   colors,x
 	sta   $19
 	stz   $19
 	dex
 	bpl   -
-
-	//; clear tilemap
+	//; restore normal VRAM increment settings
 	stz   $15
--
-	stx   $16
-	stz   $18
-	dex
-	bmi   -
 
-	//; enable screen
-	lda   #$0f
-	sta   $00
-
-	//; $2105: enable mode 7
-	//; $2106: 2x2 mosaic
-	ldx.w #$1107
-	stx   $05
+	//; at this point X = FF
+	
+	//; $210d: set mode 7 bg position
+	stz   $0d
+	stz   $0d
+	stx   $0e
+	stx   $0e
+	
+	//; $211f-20: center mode 7 bg at (0,0)
+	stz   $1f
+	stz   $1f
+	stz   $20
+	stz   $20
 
 	//; $211a - normal screen rotation
 	stz   $1a
@@ -101,9 +86,31 @@ Reset:
 	stz   $31
 
 	rep   #$20
+	//; $2105: enable mode 7
+	//; $2106: 2x2 mosaic
+	lda.w #$1107
+	sta   $05
+	
 	//; $212e-2f: disable window clipping
 	stz   $2e
 	
+	//; clear tilemap
+//	inx //; x was 00FF here, increment to 0000
+//	txa
+	tya //; we never use Y so it's always zero from power on 
+	//; - assume it's not nonzero when booting from a flash cart either
+
+-
+	sta   $16
+//	stx   $18 //; see above
+	sty   $18
+	inc
+	bpl   -
+
+	//; enable screen
+	ldx   #$0f
+	stx   $00
+
 	pld
 	//; init variables
 	lda.w #$003f
@@ -138,10 +145,9 @@ next_pixel:
 	eor.w #$04c1
 	sta.b {crc_seed}+2
 +
-	lda.w #$0000
-	tax
 	sep   #$20
 	//; update direction
+	ldx.b #$00
 	lda.b {direction}
 	asl
 	and.b #$04
