@@ -11,7 +11,9 @@ C64 port by Graham/Oxyron, this version is slightly larger than the original
 due to a lack of built-in screen/graphics routines on the SNES.
 
 Tested on NTSC hardware (with sd2snes). Should also work fine with most popular
-emulators (except for ZSNES).
+emulators (except for ZSNES). Builds with ca65.
+
+YouTube hardware capture: https://www.youtube.com/watch?v=uDIGPATH7mM
 
 d@revenant1.net
 http://revenant1.net
