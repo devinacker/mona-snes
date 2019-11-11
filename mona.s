@@ -8,9 +8,9 @@
 
 ; This version is larger than the original due to some necessary hardware init,
 ; but I still tried to make it as small as possible using a few tricks like:
-; - using mode 7 + high scaling factor + mosaic to create an easy 128x128 
+; - using mode 7 + high scaling factor + mosaic to create an easy 128x128
 ;   render surface with packed pixels
-; - using direct color mode instead of CGRAM for easy/small palette setup 
+; - using direct color mode instead of CGRAM for easy/small palette setup
 ; - abusing open-bus behavior to be able to init some hardware without having
 ;   to load an immediate value into A or X first
 
@@ -39,13 +39,13 @@ SETINI  = $2133
 HVBJOY  = $4212
 
 ; -----------------------------------------------------------------------------
-.zeropage
-part:      .res 2
-direction: .res 2
-length:    .res 2
-seed:      .res 4
-cursor:    .res 2
-pixel:     .res 2
+stackbase  = $37
+seedLo     = $38
+length     = $3a
+part       = $3b
+seedHi     = $3c
+direction  = $3e
+cursor     = $40
 
 ; -----------------------------------------------------------------------------
 .code
@@ -54,7 +54,7 @@ code_start:
 ; This data file was taken directly from the original demo's source.
 ; It contains the 16-bit LFSR seeds plus an initial 32-bit seed, but we're
 ; skipping the 32-bit part since we just directly initialize it in code later
-word_seeds: 
+word_seeds:
 .incbin "DATA.BIN", 4
 
 ; 4-color direct (BGR233) palette, based roughly on the colors used by the
@@ -75,7 +75,7 @@ Main:
 
 	; $2100: disable the display so we can start setting up VRAM
 	dec z:<INIDISP
-	
+
 	; $2133: disable hires, interlace, etc
 	stz z:<SETINI
 
@@ -102,7 +102,7 @@ Main:
 	stz z:<BG1HOFS
 	stx z:<BG1VOFS
 	stx z:<BG1VOFS
-	
+
 	; $211f-20: center mode 7 bg at (0,0)
 	stz z:<M7X
 	stz z:<M7X
@@ -124,76 +124,92 @@ Main:
 	stz z:<M7C
 	stz z:<M7D
 	sta z:<M7D
-	
+
 	; $212c: enable bg 1
 	inc z:<TM
 
 	; start using 16-bit writes from A now
 	rep #$20
 	.a16
-	
+
 	; $2130-31: disable color math but enable direct color
 	inc z:<CGWSEL
-	
+
 	; $2105: enable mode 7
 	; $2106: 2x2 mosaic
 	lda #$1107
 	sta z:<BGMODE
-	
+
 	; $212e-2f: disable window clipping
 	stz z:<TMW
-	
+
 	; clear tilemap
-	tya ; we never use Y so it's always zero from power on 
+	tya ; we never use Y so it's always zero from power on
 	; - assume it's not nonzero when booting from a flash cart either
 :	sta z:<VMADDL
 	sty Z:<VMDATAL
 	inc
 	bpl :-
 
-	lda #$003f
+	ldx #$3f
 	; $2100: enable screen
-	; (same value is used to init {part} below)
-	sta z:<INIDISP
+	; (same value is used to init {part} below as well as stack pointer)
+	stx z:<INIDISP
 
 	pld
-	; init variables
-	sta part
-	lda #$7ec8
-	sta seed+2
-	stz direction
+
+	; set stack pointer to $003f
+	txs
+
+	; initialize the direction by pushing $00
+	phd
+	; initialize the high byte of the seed
+	pea $7ec8
 
 next_part:
 	; part number is also the number of 32-pixel increments to draw
 	; with the current color
-	lda part
-	sta length
-	
+
+	; push the part number
+	phx
+	txa
 	; update the lower 16 bits of the LFSR seed for this part
 	asl
-	tax
-	lda word_seeds,x
-	sta seed
+	tay
+	lda word_seeds,y
 	; also move the cursor/plot position to the same value (LSB = X, MSB = Y)
 	sta cursor
 
 next_length:
+	; push the length
+	phx
+	; push the lower 16 bits of the seed
+	pha
+
+	; wait for the start of vblank so we can get (seemingly)
+	; exactly the same image as the original
+:	ldy HVBJOY
+	bmi :-
+:	ldy HVBJOY
+	bpl :-
+
 	; drawing in 32-pixel increments
-	lda #31
-	sta pixel
+	ldy #31
 next_pixel:
 	; update LFSR
-	asl seed
-	rol seed+2
+	asl seedLo
+	rol seedHi
 	bcc :+
-	lda seed
+	; pull the lower 16 bits of the seed
+	pla
 	eor #$1db7
-	sta seed
+	; and update
+	pha
 	; use the updated lower 8 bits of the seed to determine current direction
 	sta direction
-	lda seed+2
+	lda seedHi
 	eor #$04c1
-	sta seed+2
+	sta seedHi
 
 :	sep #$20
 	.a8
@@ -202,28 +218,31 @@ next_pixel:
 	; bit 1 set:   change X direction (x = 0)
 	; bit 7 clear: increase position (a = 1)
 	; bit 7 set:   decrease position (a = -1)
-	tyx
+
+	; initialize X with stack pointer value, with one byte long opcode
+	tsx
 	lda direction
 	asl
 	and #$04
 	bne :+
 	inx
 
-:	lda #$ff
+	; subtract by one so the same result can be obtained
+	; without clearing the carry flag even when set
+:	lda #$ff - 1
 	bcs :+
 	lda #$01
-:	clc
-	adc cursor,x
+	; here subtract the current stack pointer value
+	; to access the proper address
+:	adc cursor - stackbase,x
 	and #$7f
-	sta cursor,x
+	sta cursor - stackbase,x
 
-	; wait for vblank
-	; normally we'd want to actually wait until the *start* of vblank,
-	; but we're writing so little to VRAM per iteration here that it's
-	; generally okay just to make sure we're anywhere within vblank at all
-:	bit HVBJOY
-	bpl :-
-	
+	; this waiting method can save 5 bytes instead, however,
+	; we seem unlucky enough to get several pixels unupdated due to the bad timing
+;:	bit HVBJOY
+;	bpl :-
+
 	; plot pixel
 	; some slight translation is needed here in order to turn our 8-bit X/Y
 	; coordinates into a VRAM address - with our current setup, the address
@@ -244,20 +263,29 @@ next_pixel:
 
 	rep #$20
 	.a16
-	dec pixel
+	; Y = pixel count
+	dey
 	bpl next_pixel
-	dec length
+
+	; pull the lower 16 bits of the seed
+	pla
+	; pull the length
+	plx
+	dex
 	bpl next_length
-	dec part
+
+	; pull the part number
+	plx
+	dex
 	bpl next_part
 
 	; the end
-	; don't use STP since that makes snes9x freak out, 
+	; don't use STP since that makes snes9x freak out,
 	; but there are no interrupts anyway
 	wai
-	
+
 .out .sprintf("code size: %u bytes (including reset vector)", *-code_start+2)
-	
+
 ; -----------------------------------------------------------------------------
 .segment "RESET"
 .word .loword(Main)
