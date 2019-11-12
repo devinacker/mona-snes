@@ -163,7 +163,7 @@ Main:
 
 	; initialize the direction by pushing $00
 	phd
-	; initialize the high byte of the seed
+	; initialize the upper 16 bits of the seed
 	pea $7ec8
 
 next_part:
