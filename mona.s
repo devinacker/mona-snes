@@ -186,12 +186,14 @@ next_length:
 	; push the lower 16 bits of the seed
 	pha
 
+	.ifdef EXACT
 	; wait for the start of vblank so we can get (seemingly)
 	; exactly the same image as the original
 :	ldy HVBJOY
 	bmi :-
 :	ldy HVBJOY
 	bpl :-
+	.endif
 
 	; drawing in 32-pixel increments
 	ldy #31
@@ -238,31 +240,47 @@ next_pixel:
 	and #$7f
 	sta cursor - stackbase,x
 
+	.ifndef EXACT
 	; this waiting method can save 5 bytes instead, however,
 	; we seem unlucky enough to get several pixels unupdated due to the bad timing
-;:	bit HVBJOY
-;	bpl :-
+:	bit HVBJOY
+	bpl :-
+	.endif
+
+	; the lowest 2 bits of the current part/seed number as a tile number
+	lda part
+	and #$03
+	tax
 
 	; plot pixel
 	; some slight translation is needed here in order to turn our 8-bit X/Y
 	; coordinates into a VRAM address - with our current setup, the address
 	; has the lowest 7 bits for X and the next 7 bits for Y, so we basically
 	; just need to compact 16 bits into 14
-	lda cursor+1
-	lsr
-	sta VMADDH
-	lda cursor
-	bcc :+
-	ora #$80
-:	sta VMADDL
-	; write a tile number (= color number) into VRAM now
-	; based on the lowest 2 bits of the current part/seed number
-	lda part
-	and #$03
-	sta VMDATAL
 
+	; to print the exact image, we have to exclude cases of plotting
+	; outside the canvas
+	; these can happen when the cursor is not moved in a certain direction
+	; after the initialization and cursor component has a MSB remaining uncleared
+	lda cursor+1
+	xba
+	lda cursor
+	asl a
 	rep #$20
 	.a16
+	ror a
+	.ifdef EXACT
+	; skip plotting if outside the canvas
+	cmp #$4000
+	bcs :+
+	.endif
+	sta VMADDL
+	; write a tile number (= color number) into VRAM now
+	stx VMDATAL
+	.ifdef EXACT
+:
+	.endif
+
 	; Y = pixel count
 	dey
 	bpl next_pixel
