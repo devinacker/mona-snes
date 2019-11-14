@@ -57,19 +57,11 @@ code_start:
 word_seeds:
 .incbin "DATA.BIN", 4
 
-; 4-color direct (BGR233) palette, based roughly on the colors used by the
-; original demo. The background uses $01 instead of $00 since the latter
-; would actually be transparent and we avoid properly initializing the actual
-; screen backdrop to save space, but a dark non-black color also works okay.
-colors:
-.byte $bf, $67, $15, $01
-
 Main:
 	clc
 	xce
 
 	; use DP as a pointer to B bus
-	phd
 	pea $2100
 	pld
 
@@ -79,6 +71,14 @@ Main:
 	; $2133: disable hires, interlace, etc
 	stz z:<SETINI
 
+	; push the color data
+	; 4-color direct (BGR233) palette, based roughly on the colors used by the
+	; original demo. The background uses $01 instead of $00 since the latter
+	; would actually be transparent and we avoid properly initializing the actual
+	; screen backdrop to save space, but a dark non-black color also works okay.
+	pea $bf << 8 | $67
+	pea $15 << 8 | $01
+
 	; init mode 7 screen buffer here before re-enabling screen
 	; what we want to do is create 4 tiles each with a different color
 	; as the upper left pixel, then actually use the tile map as a canvas
@@ -87,43 +87,41 @@ Main:
 	; palette setup
 	stz z:<VMADDL
 	stz z:<VMADDH
-	ldx #$03
-:	lda colors,x
-	sta z:<VMDATAH
+:	ply
+	sty z:<VMDATAH
 	stz z:<VMDATAH
+	bpl :-
+	; since the last byte to be written is $bf, which is minus, we can terminate the loop without a loop counter
+
+	; zero clear $210d - $2120
+	; $211f-20: center mode 7 bg at (0,0)
+	; $211b-1e: mode 7 matrix
+	; $211a: normal screen rotation
+	; $2118-19: no problem to write the value to since the current VRAM address points to an irrelevant offset
+	; $2116-17: it is also a nice side effect to clear the address for later use
+	; $2115: restore normal VRAM increment settings
+	; $210d-14: BG offsets
+	ldx #$20 - $0d
+:	stz $0d,x
+	stz $0d,x
 	dex
 	bpl :-
-	; restore normal VRAM increment settings
-	stz z:<VMAIN
 
-	; at this point X = FF
-	; $210d: set mode 7 bg position
-	stz z:<BG1HOFS
-	stz z:<BG1HOFS
-	stx z:<BG1VOFS
-	stx z:<BG1VOFS
+	; re-initialize some exceptions
 
-	; $211f-20: center mode 7 bg at (0,0)
-	stz z:<M7X
-	stz z:<M7X
-	stz z:<M7Y
-	stz z:<M7Y
-
-	; $211a - normal screen rotation
-	stz z:<M7SEL
-	; 211b-1e mode 7 matrix
+	; $211b-1e: mode 7 matrix
 	; along with the mosaic setting in $2106, this transform will let
 	; each tile in the tilemap appear as a single double-size pixel on screen
 	; to turn the tilemap itself into our 128x128 four-color drawing surface
-	lda #$04
-	stz z:<M7A
-	sta z:<M7A
-	stz z:<M7B
-	stz z:<M7B
-	stz z:<M7C
-	stz z:<M7C
+	ldy #$04
+	sty z:<M7A
 	stz z:<M7D
-	sta z:<M7D
+	sty z:<M7D
+
+	; at this point X = FF
+	; $210e: reset mode 7 bg position
+	stx z:<BG1VOFS
+	stx z:<BG1VOFS
 
 	; $212c: enable bg 1
 	inc z:<TM
@@ -144,19 +142,22 @@ Main:
 	stz z:<TMW
 
 	; clear tilemap
-	tya ; we never use Y so it's always zero from power on
-	; - assume it's not nonzero when booting from a flash cart either
+	; initialize A and X with $00
+	inx
+	txa
 :	sta z:<VMADDL
-	sty Z:<VMDATAL
+	stx Z:<VMDATAL
 	inc
-	bpl :-
+	bne :-
+	; here, the loop may also be terminated with 'bpl', but since we want A = $00 and therefore do an excessive loop
 
 	ldx #$3f
 	; $2100: enable screen
 	; (same value is used to init {part} below as well as stack pointer)
 	stx z:<INIDISP
 
-	pld
+	; direct page = $00
+	tcd
 
 	; set stack pointer to $003f
 	txs
